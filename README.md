@@ -36,3 +36,21 @@ I collected dad jokes from multiple sources across the internet. This includes, 
 - https://www.today.com/life/holidays/april-fools-jokes-rcna68345
 - https://www.today.com/life/holidays/st-patricks-day-jokes-rcna132164
 - https://www.today.com/life/holidays/groundhog-day-jokes-rcna68706
+
+## Functionality
+There are two files.
+The txt file contains the dad jokes and their categories. Each joke is in a separate row with the categories following the joke.
+The py file contains the app. The app has the following features:
+- Users can select a category and receive a joke from that category. The app will show the joke on the screen and speak it.
+- Users can use keywords to search for jokes.
+- Users can ask for a seasonal joke. The py file contains a list of holidays or seasons. If today's date is near that event, then that category of jokes is available using the Seasonal Joke button.
+- Users can add their jokes to a list of favorites and view that list.
+- Users can respond with an emoji,
+- Users can change the color theme.
+- When users exit, the app will say a silly goodbye. 
+
+There is also an admin panel with the following functionality.
+- Users can view jokes and change the assigned categories.
+- Users can see counts of jokes by category.
+- Users can change the theme colors.
+- Users can add and categorize their own jokes.
