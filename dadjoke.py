@@ -1,23 +1,28 @@
+#Main dad joke app
+#Updated 4/21/2025
+
+# === Imports and Setup ===
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, colorchooser
 from datetime import datetime, timedelta
-import random, os, re, json
+import random, os, json
+import re
 import pyttsx3
+import difflib
+from joke_charts import plot_category_counts, plot_reaction_scores
+from admin_panel import open_admin_panel
 
-# Initialize TTS engine
+
 engine = pyttsx3.init()
 engine.setProperty('rate', 150)
 
-def speak(text):
-    engine.say(text)
-    engine.runAndWait()
+FAVORITES_FILE = "favorites.json"
 
-# Load jokes from file
-def load_jokes(filename="dadjokeslist.txt"): #Update with link to your joke file
+# === Joke Loading & Deduplication ===
+def load_jokes():
+    path = "/Users/jamesalcorn/Documents/Jupyter/Dadjokes/cleaned_dadjokeslist.txt" if os.path.exists("/Users/jamesalcorn/Documents/Jupyter/Dadjokes/cleaned_dadjokeslist.txt") else "/Users/jamesalcorn/Documents/Jupyter/Dadjokes/dadjokeslist.txt"
     jokes = []
-    if not os.path.exists(filename):
-        return jokes
-    with open(filename, "r") as f:
+    with open(path, 'r') as f:
         for line in f:
             parts = line.strip().split("%%")
             text = parts[0].strip()
@@ -25,24 +30,62 @@ def load_jokes(filename="dadjokeslist.txt"): #Update with link to your joke file
             jokes.append({"text": text, "categories": categories})
     return jokes
 
-def save_jokes(jokes, filename="dadjokeslist.txt"): #Update with link to your joke file
-    with open(filename, "w") as f:
+def load_reactions():
+    if not os.path.exists("joke_reactions.json"):
+        return {}
+    with open("joke_reactions.json", "r") as f:
+        return json.load(f)
+
+def normalize(text):
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+def remove_duplicates(jokes, fuzzy_threshold=0.9):
+    seen = []
+    cleaned = []
+    for joke in jokes:
+        norm_joke = normalize(joke["text"])
+        is_duplicate = False
+        for seen_joke in seen:
+            ratio = difflib.SequenceMatcher(None, norm_joke, seen_joke["norm"]).ratio()
+            if ratio >= fuzzy_threshold:
+                seen_joke["joke"]["categories"] = list(set(seen_joke["joke"]["categories"] + joke["categories"]))
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            seen.append({"norm": norm_joke, "joke": joke})
+            cleaned.append(joke)
+    return cleaned
+
+def save_jokes(jokes, filename):
+    with open(filename, 'w') as f:
         for joke in jokes:
             line = joke["text"]
             for cat in joke["categories"]:
                 line += f" %%{cat}"
-            f.write(line + "\n")
+            f.write(line + '\n')
 
-# Load and save reactions
-def load_reactions(filename="joke_reactions.json"):
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            return json.load(f)
-    return {}
+def run_deduplication_script():
+    jokes = load_jokes()
+    cleaned_jokes = remove_duplicates(jokes)
+    save_jokes(cleaned_jokes, 'cleaned_dadjokeslist.txt')
+    messagebox.showinfo("Deduplication Complete", f"{len(jokes) - len(cleaned_jokes)} duplicates removed.")
 
-def save_reactions():
-    with open("joke_reactions.json", "w") as f:
-        json.dump(reactions, f, indent=2)
+# === Favorites Persistence ===
+def load_favorites():
+    if not os.path.exists(FAVORITES_FILE):
+        return []
+    with open(FAVORITES_FILE, "r") as f:
+        return json.load(f)
+
+def save_favorites(favorites):
+    with open(FAVORITES_FILE, "w") as f:
+        json.dump(favorites, f, indent=2)
+
+def add_to_favorites(joke):
+    favorites = load_favorites()
+    if not any(j["text"] == joke["text"] for j in favorites):
+        favorites.append(joke)
+        save_favorites(favorites)
 
 # --- Seasonal Joke Calculations ---
 def calculate_easter(year):
@@ -125,31 +168,31 @@ def get_seasonal_events():
     today = datetime.today()
     year = today.year
     return {
-        "Christmas": datetime(year, 12, 25),
-        "Halloween": datetime(year, 10, 31),
-        "Valentine's Day": datetime(year, 2, 14),
-        "April Fools": datetime(year, 4, 1),
-        "Cinco de Mayo": datetime(year, 5, 5),
-        "Easter": calculate_easter(year),
-        "St. Patrick’s day": datetime(year, 3, 17),
-        "Fourth of July": datetime(year, 7, 4),
-        "New Years": datetime(year, 1, 1),
-        "Birthday": datetime(year, 3, 4),
-        "Birthday": datetime(year, 8, 21),
-        "Birthday": datetime(year, 6, 25),
-        "Star Wars": datetime(year, 5, 4),
+        
+        "New Years": datetime(year, 1, 1),        
         "Groundhog Day": datetime(year, 2, 2),
+        "Valentine's Day": datetime(year, 2, 14),
+        "Birthday": datetime(year, 3, 4),
+        "Pi Day": datetime(year, 3, 14),
+        "St. Patrick’s day": datetime(year, 3, 17),
+        "April Fools": datetime(year, 4, 1),
+        "Earth Day": datetime(year, 4, 22),
+        "Arbor Day": datetime(year, 4, 26), # Typically last Friday in April, can adjust logic if needed
+        "Star Wars": datetime(year, 5, 4),
+        "Cinco de Mayo": datetime(year, 5, 5),
+        "Birthday": datetime(year, 6, 25),
+        "Fourth of July": datetime(year, 7, 4),
+        "Birthday": datetime(year, 8, 21),
+        "Pirate": datetime(year, 9, 19),
+        "Halloween": datetime(year, 10, 31),
+        "Christmas": datetime(year, 12, 25),
+        "Easter": calculate_easter(year),
         "Fathers Day": calculate_fathers_day(year),
         "Mothers Day": calculate_mothers_day(year),
         "Election": calculate_election_day(year),
         "Thanksgiving": calculate_thanksgiving(year),
-        "Pi Day": datetime(year, 3, 14),
-        "Pirate": datetime(year, 9, 19),
         "Mardi Gras": calculate_mardi_gras(year),
         "Presidents' Day": calculate_presidents_day(year),
-        "Earth Day": datetime(year, 4, 22),
-        "Talk Like a Pirate Day": datetime(year, 9, 19), # Added for consistency
-        "Arbor Day": datetime(year, 4, 26) # Typically last Friday in April, can adjust logic if needed
     }
 
 def get_nearby_event():
@@ -160,67 +203,89 @@ def get_nearby_event():
             return name
     return None
 
+# === Joke Selection Logic ===
 jokes = load_jokes()
-favorites = []
 shown_jokes = set()
 theme = {"bg": "#f0f0f0", "fg": "black", "button": "lightblue"}
-reactions = load_reactions()
-current_joke = {} # To store the current joke object
 
-# --- Joke selection functions with weighting ---
-def get_joke_weight(joke):
-    text = joke["text"]
-    react = reactions.get(text, {"Funny": 0, "Confused": 0, "Bad": 0})
-    return 1 + 3 * react.get("Funny", 0) + react.get("Confused", 0) - 2 * react.get("Bad", 0)
 
 def get_random_joke():
     remaining = [j for j in jokes if j["text"] not in shown_jokes]
     if not remaining:
         shown_jokes.clear()
         remaining = jokes
-    weighted = [(j, get_joke_weight(j)) for j in remaining]
-    if not weighted:
-        return random.choice(jokes) if jokes else None # Fallback if no reactions yet
-    population, weights = zip(*weighted)
-    joke = random.choices(population, weights=weights)[0]
+    joke = random.choice(remaining)
     shown_jokes.add(joke["text"])
     return joke
 
 def get_joke_by_category(cat):
     filtered = [j for j in jokes if cat in j["categories"]]
-    if not filtered:
-        return None
-    weighted = [(j, get_joke_weight(j)) for j in filtered]
-    if not weighted:
-        return random.choice(filtered) if filtered else None # Fallback
-    population, weights = zip(*weighted)
-    return random.choices(population, weights=weights)[0]
+    return random.choice(filtered) if filtered else None
 
-def get_seasonal_joke():
-    event = get_nearby_event()
-    if not event:
-        return {"text": "No seasonal event right now!", "categories": []}
-    return get_joke_by_category(event) or {"text": f"No jokes for {event}", "categories": []}
+# === GUI Setup ===
+root = tk.Tk()
+root.title("Dad Joke Generator")
+root.geometry("500x600")
 
+joke_text = tk.StringVar()
+cat_label_var = tk.StringVar()
+current_joke = {}
+
+def speak(text):
+    try:
+        engine.say(text)
+        engine.runAndWait()
+    except:
+        pass
+
+def show_joke(joke):
+    if not joke:
+        messagebox.showinfo("Oops!", "No joke found!")
+        return
+    joke_text.set(joke["text"])
+    current_joke["joke"] = joke
+    cat_label_var.set("Categories: " + ", ".join(joke["categories"]))
+    speak(joke["text"])
+
+def react_to_joke(reaction):
+    joke = current_joke.get("joke")
+    if joke and reaction == "Funny":
+        add_to_favorites(joke)
+        messagebox.showinfo("Reaction Recorded", "Added to favorites!")
+    elif joke:
+        messagebox.showinfo("Reaction Recorded", f"You reacted: {reaction}")
+
+# === Main Widgets ===
+
+joke_label = tk.Label(root, textvariable=joke_text, wraplength=400, bg=theme["bg"], fg=theme["fg"],font=("Helvetica", 16))
+joke_label.pack(pady=10)
+
+cat_label = tk.Label(root, textvariable=cat_label_var, bg=theme["bg"], fg=theme["fg"])
+cat_label.pack()
+
+# create a horizontal separator
+separator = ttk.Separator(root, orient=tk.HORIZONTAL)
+separator.pack(side=tk.TOP, fill=tk.X, pady=5)
+
+    # == category dropdown ==
 def get_all_categories():
     cats = set()
     for joke in jokes:
         cats.update(joke["categories"])
     return sorted(cats)
-
-# --- Main App ---
-root = tk.Tk()
-root.title("Dad Joke Generator")
-root.configure(bg=theme["bg"])
-
-joke_text = tk.StringVar()
-cat_label_var = tk.StringVar()
-
+    
 category_var = tk.StringVar()
 category_dropdown = ttk.Combobox(root, textvariable=category_var)
 category_dropdown['values'] = get_all_categories()
 category_dropdown.pack(pady=5)
 
+tk.Button(root, text="Get Joke from Category", command=lambda: show_joke(get_joke_by_category(category_var.get())), bg=theme["button"]).pack(pady=3)
+
+# create a horizontal separator
+separator = ttk.Separator(root, orient=tk.HORIZONTAL)
+separator.pack(side=tk.TOP, fill=tk.X, pady=5)
+
+    #search function ==
 search_entry = tk.Entry(root)
 search_entry.pack(pady=3)
 
@@ -234,224 +299,99 @@ def search_jokes():
 
 tk.Button(root, text="Search", command=search_jokes, bg=theme["button"]).pack(pady=2)
 
-joke_label = tk.Label(root, textvariable=joke_text, wraplength=400, bg=theme["bg"], fg=theme["fg"])
-joke_label.pack(pady=10)
+# create a horizontal separator
+separator = ttk.Separator(root, orient=tk.HORIZONTAL)
+separator.pack(side=tk.TOP, fill=tk.X, pady=5)
 
-cat_label = tk.Label(root, textvariable=cat_label_var, bg=theme["bg"], fg=theme["fg"])
-cat_label.pack()
 
-tk.Button(root, text="Random Joke", command=lambda: show_joke(get_random_joke()), bg=theme["button"]).pack(pady=3)
-tk.Button(root, text="Seasonal Joke", command=lambda: show_joke(get_seasonal_joke()), bg=theme["button"]).pack(pady=3)
-tk.Button(root, text="Get Joke from Category", command=lambda: show_joke(get_joke_by_category(category_var.get())), bg=theme["button"]).pack(pady=3)
+tk.Button(root, text="Random Joke", command=lambda: show_joke(get_random_joke())).pack(pady=5)
+tk.Button(root, text="Seasonal Joke", command=lambda: show_joke(get_seasonal_joke()), bg=theme["button"]).pack(pady=5)
 
-reaction_frame = tk.Frame(root, bg=theme["bg"])
+
+# === Reaction Buttons ===
+reaction_frame = tk.Frame(root)
 reaction_frame.pack(pady=5)
-tk.Button(reaction_frame, text="😆 Funny!", command=lambda: react_to_joke("Funny"), bg="lightgreen").pack(side="left", padx=5)
-tk.Button(reaction_frame, text="🤔 Huh?", command=lambda: react_to_joke("Confused"), bg="lightyellow").pack(side="left", padx=5)
-tk.Button(reaction_frame, text="🙄 So Bad", command=lambda: react_to_joke("Bad"), bg="lightcoral").pack(side="left", padx=5)
+tk.Button(reaction_frame, text="😆 Funny", command=lambda: react_to_joke("Funny")).pack(side="left", padx=5)
+tk.Button(reaction_frame, text="🤔 Huh?", command=lambda: react_to_joke("Confused")).pack(side="left", padx=5)
+tk.Button(reaction_frame, text="🙄 So Bad", command=lambda: react_to_joke("Bad")).pack(side="left", padx=5)
 
+# === Joke Sharing Functions ===
+import webbrowser
+import urllib.parse
+
+def copy_to_clipboard(text):
+    root.clipboard_clear()
+    root.clipboard_append(text)
+    root.update()  # Required on macOS
+    messagebox.showinfo("Copied", "Joke copied to clipboard!")
+
+def export_joke_to_file(text):
+    with open("shared_joke.txt", "w") as f:
+        f.write(text)
+    messagebox.showinfo("Exported", "Joke saved to shared_joke.txt!")
+
+def email_joke(text):
+    subject = urllib.parse.quote("Check out this Dad Joke!")
+    body = urllib.parse.quote(text)
+    mailto_link = f"mailto:?subject={subject}&body={body}"
+    webbrowser.open(mailto_link)
+
+# === Sharing Buttons ===
+
+share_frame = tk.Frame(root)
+share_frame.pack(pady=5)
+
+tk.Button(share_frame, text="📋 Copy", command=lambda: copy_to_clipboard(joke_text.get())).pack(side="left", padx=5)
+tk.Button(share_frame, text="💾 Export", command=lambda: export_joke_to_file(joke_text.get())).pack(side="left", padx=5)
+tk.Button(share_frame, text="✉️ Email", command=lambda: email_joke(joke_text.get())).pack(side="left", padx=5)
+
+
+# === View Favorites ===
 def show_favorites():
-    if not favorites:
+    favs = load_favorites()
+    if not favs:
         messagebox.showinfo("Favorites", "No favorites yet!")
         return
-    fav_text = "\n\n".join(j["text"] for j in favorites)
-    messagebox.showinfo("Favorite Jokes", fav_text)
+    fav_text = "\n\n".join(j["text"] for j in favs)
+    messagebox.showinfo("Favorites", fav_text)
 
-tk.Button(root, text="View Favorites", command=show_favorites, bg=theme["button"]).pack(pady=3)
+tk.Button(root, text="View Favorites", command=show_favorites).pack(pady=5)
 
-style_frame = tk.Frame(root, bg=theme["bg"])
-style_frame.pack(pady=5)
+# == Admin Panel ==
 
-def apply_theme(choice):
-    themes = {
-        "Default": ("#f0f0f0", "black", "lightblue"),
-        "Space": ("#1a1a2e", "white", "#0f3460"),
-        "Jungle": ("#dff0d8", "darkgreen", "#4caf50"),
-        "Candyland": ("#ffe6f0", "deeppink", "#ff99cc")
-    }
-    if choice in themes:
-        update_theme(*themes[choice])
+def launch_admin_panel():
+    try:
+        messagebox.showinfo("Debug", "Launching admin panel...")
 
-theme_var = tk.StringVar(value="Default")
-theme_menu = ttk.OptionMenu(style_frame, theme_var, "Default", *["Default", "Space", "Jungle", "Candyland"], command=apply_theme)
-theme_menu.pack()
+        jokes_data = load_jokes()
+        reactions = load_reactions()
 
+        open_admin_panel(
+            jokes=jokes_data,
+            reactions=reactions,
+            save_jokes_callback=lambda jokes: save_jokes(jokes, "cleaned_dadjokeslist.txt"),
+            run_deduplication_callback=run_deduplication_script
+        )
+    except Exception as e:
+        messagebox.showerror("Error", f"Admin panel launch failed:\n{e}")
+
+
+
+
+tk.Button(root, text="Admin Panel", command=launch_admin_panel, bg=theme["button"]).pack(pady=5)
+
+
+
+
+# === Exit Button ===
 def on_exit():
-    goodbye_joke = get_joke_by_category("goodbye")
-    if goodbye_joke:
-        speak(goodbye_joke["text"])
+    goodbye = get_joke_by_category("Goodbye")
+    if goodbye:
+        speak(goodbye["text"])
     root.destroy()
 
-def open_admin_panel():
-    admin = tk.Toplevel(root)
-    admin.title("Admin Panel")
-    admin.geometry("700x500")
-
-    notebook = ttk.Notebook(admin)
-    notebook.pack(fill="both", expand=True)
-
-    # --- Joke Editor Tab ---
-    editor_frame = tk.Frame(notebook)
-    notebook.add(editor_frame, text="Edit Jokes")
-
-    per_page = 50
-    current_page = tk.IntVar(value=0)
-
-    listbox = tk.Listbox(editor_frame, height=20)
-    listbox.pack(side="left", fill="y")
-
-    edit_frame = tk.Frame(editor_frame)
-    edit_frame.pack(side="right", fill="both", expand=True)
-
-    cat_entry = tk.Entry(edit_frame)
-    cat_entry.pack(pady=5)
-
-    def load_page():
-        listbox.delete(0, tk.END)
-        start = current_page.get() * per_page
-        for i, joke in enumerate(jokes[start:start+per_page]):
-            listbox.insert(tk.END, joke["text"][:80])
-
-    def update_categories():
-        idx = listbox.curselection()
-        if not idx:
-            return
-        joke_idx = current_page.get() * per_page + idx[0]
-        cats = [c.strip() for c in cat_entry.get().split(",") if c.strip()]
-        jokes[joke_idx]["categories"] = cats
-        save_jokes(jokes)
-        load_page()
-
-    def on_select(event):
-        idx = listbox.curselection()
-        if not idx:
-            return
-        joke_idx = current_page.get() * per_page + idx[0]
-        cat_entry.delete(0, tk.END)
-        cat_entry.insert(0, ", ".join(jokes[joke_idx]["categories"]))
-
-    listbox.bind("<<ListboxSelect>>", on_select)
-    tk.Button(edit_frame, text="Update Categories", command=update_categories).pack(pady=2)
-    tk.Button(editor_frame, text="Prev", command=lambda: (current_page.set(max(0, current_page.get() - 1)), load_page())).pack()
-    tk.Button(editor_frame, text="Next", command=lambda: (current_page.set(current_page.get() + 1), load_page())).pack()
-    load_page()
-
-    # --- Category Count Tab ---
-    count_frame = tk.Frame(notebook)
-    notebook.add(count_frame, text="Category Counts")
-
-    def show_category_counts():
-        counts = {}
-        for j in jokes:
-            for cat in j["categories"]:
-                counts[cat] = counts.get(cat, 0) + 1
-        if not counts:
-            messagebox.showinfo("No Categories", "There are no categories to count.")
-            return
-
-        counts_win = tk.Toplevel(root)
-        counts_win.title("Category Counts")
-        counts_win.geometry("400x400")
-
-        canvas = tk.Canvas(counts_win)
-        scrollbar = ttk.Scrollbar(counts_win, orient="vertical", command=canvas.yview)
-        scroll_frame = tk.Frame(canvas)
-
-        scroll_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        for cat, count in sorted(counts.items()):
-            tk.Label(scroll_frame, text=f"{cat}: {count}", anchor="w").pack(anchor="w", padx=10)
-
-    tk.Button(count_frame, text="Show Category Counts", command=show_category_counts).pack(pady=10)
-
-    # --- Theme Tab ---
-    theme_frame = tk.Frame(notebook)
-    notebook.add(theme_frame, text="Theme")
-
-    def change_theme():
-        color = colorchooser.askcolor(title="Choose Background Color")[1]
-        if color:
-            theme["bg"] = color
-            root.configure(bg=color)
-            for widget in root.winfo_children():
-                widget.configure(bg=color)
-
-    tk.Button(theme_frame, text="Change Background Color", command=change_theme).pack(pady=10)
-
-    # --- Emoji Reactions Tab ---
-    reaction_frame = tk.Frame(notebook)
-    notebook.add(reaction_frame, text="Emoji Reactions")
-
-    sorted_reacts = sorted(reactions.items(), key=lambda x: x[1].get("Funny", 0), reverse=True)
-    summary = ""
-    for joke, reacts in sorted_reacts:
-        summary += f"\n{joke[:50]}...\n  Funny: {reacts.get('Funny', 0)} | Huh: {reacts.get('Confused', 0)} | Bad: {reacts.get('Bad', 0)}\n"
-    tk.Label(reaction_frame, text=summary or "No reactions yet.", justify="left", anchor="w").pack(padx=10, pady=10, fill="both", expand=True)
-
-tk.Button(root, text="Admin Panel", command=open_admin_panel, bg=theme["button"]).pack(pady=3)
-tk.Button(root, text="Close", command=on_exit, bg=theme["button"], fg=theme["fg"]).pack(pady=3) # Modified close button
-
-
-
-
-
-# --- UI Functions ---
-def show_joke(joke):
-    if not joke:
-        messagebox.showinfo("Oops!", "No joke found for this category!")
-        return
-    joke_text.set(joke["text"])
-    current_joke["joke"] = joke
-    cat_label_var.set("Categories: " + ", ".join(joke.get("categories", [])))
-    speak(joke["text"])
-
-def react_to_joke(reaction):
-    joke = current_joke.get("joke")
-    if joke:
-        text = joke["text"]
-        if text not in reactions:
-            reactions[text] = {"Funny": 0, "Confused": 0, "Bad": 0}
-        reactions[text][reaction] += 1
-        save_reactions()
-        if reaction == "Funny" and joke not in favorites:
-            favorites.append(joke)
-        messagebox.showinfo("Reaction Recorded", f"You reacted: {reaction}")
-
-style_frame = tk.Frame(root, bg=theme["bg"])
-style_frame.pack(pady=5)
-
-def update_theme(bg, fg, button):
-    theme["bg"] = bg
-    theme["fg"] = fg
-    theme["button"] = button
-    root.configure(bg=bg)
-    for widget in root.winfo_children():
-        try:
-            widget.configure(bg=bg, fg=fg)
-        except:
-            pass
-
-def apply_theme(choice):
-    themes = {
-        "Default": ("#f0f0f0", "black", "lightblue"),
-        "Space": ("#1a1a2e", "white", "#0f3460"),
-        "Jungle": ("#dff0d8", "darkgreen", "#4caf50"),
-        "Candyland": ("#ffe6f0", "deeppink", "#ff99cc")
-    }
-    if choice in themes:
-        update_theme(*themes[choice])
-
-
+tk.Button(root, text="Close", command=on_exit).pack(pady=5)
 
 show_joke({"text": "Welcome to the Dad Joke Generator!", "categories": []})
-
+root.protocol("WM_DELETE_WINDOW", on_exit)
 root.mainloop()
