@@ -12,26 +12,28 @@ def speak(text):
     engine.say(text)
     engine.runAndWait()
 
-# Load jokes from file
-def load_jokes(filename="dadjokeslist.txt"): #Update with link to your joke file
+# Load jokes from JSON file
+def load_jokes(filename="jokes.json"):
     jokes = []
     if not os.path.exists(filename):
+        # Create an empty jokes.json if it doesn't exist
+        with open(filename, "w") as f:
+            json.dump([], f)
         return jokes
-    with open(filename, "r") as f:
-        for line in f:
-            parts = line.strip().split("%%")
-            text = parts[0].strip()
-            categories = [p.strip() for p in parts[1:]]
-            jokes.append({"text": text, "categories": categories})
+    try:
+        with open(filename, "r") as f:
+            jokes = json.load(f)
+    except json.JSONDecodeError:
+        # Handle cases where the file is empty or malformed
+        # You might want to log this error or create a default empty list
+        with open(filename, "w") as f: # Overwrite/create with empty list
+            json.dump([], f)
+        return [] # Return empty list if decode error
     return jokes
 
-def save_jokes(jokes, filename="dadjokeslist.txt"): #Update with link to your joke file
+def save_jokes(jokes, filename="jokes.json"):
     with open(filename, "w") as f:
-        for joke in jokes:
-            line = joke["text"]
-            for cat in joke["categories"]:
-                line += f" %%{cat}"
-            f.write(line + "\n")
+        json.dump(jokes, f, indent=2)
 
 # Load and save reactions
 def load_reactions(filename="joke_reactions.json"):
@@ -211,18 +213,42 @@ def get_all_categories():
 # --- Main App ---
 root = tk.Tk()
 root.title("Dad Joke Generator")
-root.configure(bg=theme["bg"])
+
+# Apply some root padding
+root.configure(bg=theme["bg"], padx=10, pady=10)
+
+# --- TTK Styling ---
+style = ttk.Style()
+try:
+    style.theme_use('clam') # A modern theme
+except tk.TclError:
+    try:
+        style.theme_use('alt') # Fallback
+    except tk.TclError:
+        style.theme_use('default') # Last resort
+
+# Base font for all ttk widgets (tk widgets might need separate config or inherit)
+style.configure('.', font=('Helvetica', 10))
+
+# Custom style for TButton for consistent padding
+style.configure("TButton", padding=5)
+
+# Custom style for TNotebook tabs
+style.configure("TNotebook.Tab", padding=(10, 5), font=('Helvetica', 10, 'bold'))
+
 
 joke_text = tk.StringVar()
 cat_label_var = tk.StringVar()
 
 category_var = tk.StringVar()
-category_dropdown = ttk.Combobox(root, textvariable=category_var)
+# Using ttk.Combobox - should pick up style
+category_dropdown = ttk.Combobox(root, textvariable=category_var, font=('Helvetica', 10)) 
 category_dropdown['values'] = get_all_categories()
-category_dropdown.pack(pady=5)
+category_dropdown.pack(pady=10, padx=5, fill="x")
 
-search_entry = tk.Entry(root)
-search_entry.pack(pady=3)
+# Using tk.Entry, font might need to be set if not inherited, or switch to ttk.Entry
+search_entry = tk.Entry(root, font=('Helvetica', 10))
+search_entry.pack(pady=5, padx=5, fill="x")
 
 def search_jokes():
     term = search_entry.get().lower()
@@ -232,23 +258,42 @@ def search_jokes():
     else:
         messagebox.showinfo("Search", "No jokes matched your search.")
 
-tk.Button(root, text="Search", command=search_jokes, bg=theme["button"]).pack(pady=2)
+# Using ttk.Button for themed buttons where custom bg isn't paramount
+ttk.Button(root, text="Search", command=search_jokes, style="TButton").pack(pady=5, padx=5, fill="x")
 
-joke_label = tk.Label(root, textvariable=joke_text, wraplength=400, bg=theme["bg"], fg=theme["fg"])
-joke_label.pack(pady=10)
+# tk.Label - will use theme["bg"], theme["fg"]. Font should be inherited from root or set.
+joke_label = tk.Label(root, textvariable=joke_text, wraplength=400, bg=theme["bg"], fg=theme["fg"], font=('Helvetica', 12))
+joke_label.pack(pady=10, padx=5)
 
-cat_label = tk.Label(root, textvariable=cat_label_var, bg=theme["bg"], fg=theme["fg"])
-cat_label.pack()
+cat_label = tk.Label(root, textvariable=cat_label_var, bg=theme["bg"], fg=theme["fg"], font=('Helvetica', 9))
+cat_label.pack(pady=5, padx=5)
 
-tk.Button(root, text="Random Joke", command=lambda: show_joke(get_random_joke()), bg=theme["button"]).pack(pady=3)
-tk.Button(root, text="Seasonal Joke", command=lambda: show_joke(get_seasonal_joke()), bg=theme["button"]).pack(pady=3)
-tk.Button(root, text="Get Joke from Category", command=lambda: show_joke(get_joke_by_category(category_var.get())), bg=theme["button"]).pack(pady=3)
+# Button frame for main action buttons
+button_action_frame = ttk.Frame(root) # Use ttk.Frame
+button_action_frame.pack(pady=10, padx=5, fill="x")
 
-reaction_frame = tk.Frame(root, bg=theme["bg"])
-reaction_frame.pack(pady=5)
-tk.Button(reaction_frame, text="😆 Funny!", command=lambda: react_to_joke("Funny"), bg="lightgreen").pack(side="left", padx=5)
-tk.Button(reaction_frame, text="🤔 Huh?", command=lambda: react_to_joke("Confused"), bg="lightyellow").pack(side="left", padx=5)
-tk.Button(reaction_frame, text="🙄 So Bad", command=lambda: react_to_joke("Bad"), bg="lightcoral").pack(side="left", padx=5)
+# Using ttk.Button for these as well, custom theme["button"] color might not apply directly with all ttk themes.
+# If specific colors are essential, tk.Button might be kept, or style ttk.Button further.
+# For now, let's use ttk.Button and rely on the TButton style for padding.
+# The 'bg=theme["button"]' will be less effective on ttk.Button for some themes.
+# We are prioritizing ttk styling for this pass.
+col_weight = 1
+button_action_frame.columnconfigure(0, weight=col_weight)
+button_action_frame.columnconfigure(1, weight=col_weight)
+button_action_frame.columnconfigure(2, weight=col_weight)
+
+ttk.Button(button_action_frame, text="Random Joke", command=lambda: show_joke(get_random_joke()), style="TButton").grid(row=0, column=0, pady=5, padx=2, sticky="ew")
+ttk.Button(button_action_frame, text="Seasonal Joke", command=lambda: show_joke(get_seasonal_joke()), style="TButton").grid(row=0, column=1, pady=5, padx=2, sticky="ew")
+ttk.Button(button_action_frame, text="Get Joke from Category", command=lambda: show_joke(get_joke_by_category(category_var.get())), style="TButton").grid(row=0, column=2, pady=5, padx=2, sticky="ew")
+
+
+# Reaction buttons: these have specific colors. Keep as tk.Button for now.
+reaction_frame = tk.Frame(root, bg=theme["bg"]) # This is a tk.Frame
+reaction_frame.pack(pady=10, padx=5)
+tk.Button(reaction_frame, text="😆 Funny!", command=lambda: react_to_joke("Funny"), bg="lightgreen", font=('Helvetica', 10), relief=tk.FLAT, padx=5, pady=2).pack(side="left", padx=5)
+tk.Button(reaction_frame, text="🤔 Huh?", command=lambda: react_to_joke("Confused"), bg="lightyellow", font=('Helvetica', 10), relief=tk.FLAT, padx=5, pady=2).pack(side="left", padx=5)
+tk.Button(reaction_frame, text="🙄 So Bad", command=lambda: react_to_joke("Bad"), bg="lightcoral", font=('Helvetica', 10), relief=tk.FLAT, padx=5, pady=2).pack(side="left", padx=5)
+
 
 def show_favorites():
     if not favorites:
@@ -257,10 +302,20 @@ def show_favorites():
     fav_text = "\n\n".join(j["text"] for j in favorites)
     messagebox.showinfo("Favorite Jokes", fav_text)
 
-tk.Button(root, text="View Favorites", command=show_favorites, bg=theme["button"]).pack(pady=3)
+# Management buttons frame
+button_mgmt_frame = ttk.Frame(root) # Use ttk.Frame
+button_mgmt_frame.pack(pady=10, padx=5, fill="x")
+button_mgmt_frame.columnconfigure(0, weight=1) # Allow buttons to expand
+button_mgmt_frame.columnconfigure(1, weight=1)
 
-style_frame = tk.Frame(root, bg=theme["bg"])
-style_frame.pack(pady=5)
+
+ttk.Button(button_mgmt_frame, text="View Favorites", command=show_favorites, style="TButton").grid(row=0, column=0, pady=5, padx=2, sticky="ew")
+ttk.Button(button_mgmt_frame, text="Admin Panel", command=lambda: create_admin_panel(root, jokes, reactions, theme, save_jokes), style="TButton").grid(row=0, column=1, pady=5, padx=2, sticky="ew")
+
+
+# Style frame for theme dropdown - use ttk.Frame
+style_controls_frame = ttk.Frame(root) # Renamed from style_frame
+style_controls_frame.pack(pady=10, padx=5)
 
 def apply_theme(choice):
     themes = {
@@ -273,8 +328,13 @@ def apply_theme(choice):
         update_theme(*themes[choice])
 
 theme_var = tk.StringVar(value="Default")
-theme_menu = ttk.OptionMenu(style_frame, theme_var, "Default", *["Default", "Space", "Jungle", "Candyland"], command=apply_theme)
-theme_menu.pack()
+# ttk.OptionMenu - should pick up style
+theme_menu = ttk.OptionMenu(style_controls_frame, theme_var, "Default", "Default", "Space", "Jungle", "Candyland", command=apply_theme)
+theme_menu.pack(pady=5, padx=5)
+
+
+# Import the admin panel creation function
+from admin_panel import create_admin_panel
 
 def on_exit():
     goodbye_joke = get_joke_by_category("goodbye")
@@ -282,129 +342,18 @@ def on_exit():
         speak(goodbye_joke["text"])
     root.destroy()
 
-def open_admin_panel():
-    admin = tk.Toplevel(root)
-    admin.title("Admin Panel")
-    admin.geometry("700x500")
-
-    notebook = ttk.Notebook(admin)
-    notebook.pack(fill="both", expand=True)
-
-    # --- Joke Editor Tab ---
-    editor_frame = tk.Frame(notebook)
-    notebook.add(editor_frame, text="Edit Jokes")
-
-    per_page = 50
-    current_page = tk.IntVar(value=0)
-
-    listbox = tk.Listbox(editor_frame, height=20)
-    listbox.pack(side="left", fill="y")
-
-    edit_frame = tk.Frame(editor_frame)
-    edit_frame.pack(side="right", fill="both", expand=True)
-
-    cat_entry = tk.Entry(edit_frame)
-    cat_entry.pack(pady=5)
-
-    def load_page():
-        listbox.delete(0, tk.END)
-        start = current_page.get() * per_page
-        for i, joke in enumerate(jokes[start:start+per_page]):
-            listbox.insert(tk.END, joke["text"][:80])
-
-    def update_categories():
-        idx = listbox.curselection()
-        if not idx:
-            return
-        joke_idx = current_page.get() * per_page + idx[0]
-        cats = [c.strip() for c in cat_entry.get().split(",") if c.strip()]
-        jokes[joke_idx]["categories"] = cats
-        save_jokes(jokes)
-        load_page()
-
-    def on_select(event):
-        idx = listbox.curselection()
-        if not idx:
-            return
-        joke_idx = current_page.get() * per_page + idx[0]
-        cat_entry.delete(0, tk.END)
-        cat_entry.insert(0, ", ".join(jokes[joke_idx]["categories"]))
-
-    listbox.bind("<<ListboxSelect>>", on_select)
-    tk.Button(edit_frame, text="Update Categories", command=update_categories).pack(pady=2)
-    tk.Button(editor_frame, text="Prev", command=lambda: (current_page.set(max(0, current_page.get() - 1)), load_page())).pack()
-    tk.Button(editor_frame, text="Next", command=lambda: (current_page.set(current_page.get() + 1), load_page())).pack()
-    load_page()
-
-    # --- Category Count Tab ---
-    count_frame = tk.Frame(notebook)
-    notebook.add(count_frame, text="Category Counts")
-
-    def show_category_counts():
-        counts = {}
-        for j in jokes:
-            for cat in j["categories"]:
-                counts[cat] = counts.get(cat, 0) + 1
-        if not counts:
-            messagebox.showinfo("No Categories", "There are no categories to count.")
-            return
-
-        counts_win = tk.Toplevel(root)
-        counts_win.title("Category Counts")
-        counts_win.geometry("400x400")
-
-        canvas = tk.Canvas(counts_win)
-        scrollbar = ttk.Scrollbar(counts_win, orient="vertical", command=canvas.yview)
-        scroll_frame = tk.Frame(canvas)
-
-        scroll_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        for cat, count in sorted(counts.items()):
-            tk.Label(scroll_frame, text=f"{cat}: {count}", anchor="w").pack(anchor="w", padx=10)
-
-    tk.Button(count_frame, text="Show Category Counts", command=show_category_counts).pack(pady=10)
-
-    # --- Theme Tab ---
-    theme_frame = tk.Frame(notebook)
-    notebook.add(theme_frame, text="Theme")
-
-    def change_theme():
-        color = colorchooser.askcolor(title="Choose Background Color")[1]
-        if color:
-            theme["bg"] = color
-            root.configure(bg=color)
-            for widget in root.winfo_children():
-                widget.configure(bg=color)
-
-    tk.Button(theme_frame, text="Change Background Color", command=change_theme).pack(pady=10)
-
-    # --- Emoji Reactions Tab ---
-    reaction_frame = tk.Frame(notebook)
-    notebook.add(reaction_frame, text="Emoji Reactions")
-
-    sorted_reacts = sorted(reactions.items(), key=lambda x: x[1].get("Funny", 0), reverse=True)
-    summary = ""
-    for joke, reacts in sorted_reacts:
-        summary += f"\n{joke[:50]}...\n  Funny: {reacts.get('Funny', 0)} | Huh: {reacts.get('Confused', 0)} | Bad: {reacts.get('Bad', 0)}\n"
-    tk.Label(reaction_frame, text=summary or "No reactions yet.", justify="left", anchor="w").pack(padx=10, pady=10, fill="both", expand=True)
-
-tk.Button(root, text="Admin Panel", command=open_admin_panel, bg=theme["button"]).pack(pady=3)
-tk.Button(root, text="Close", command=on_exit, bg=theme["button"], fg=theme["fg"]).pack(pady=3) # Modified close button
+# Close button - tk.Button to allow specific theme["fg"] color.
+# Or, create a specific ttk style for it if that's preferred.
+tk.Button(root, text="Close", command=on_exit, bg=theme.get("button", "lightgrey"), fg=theme.get("fg", "black"), font=('Helvetica', 10, 'bold'), relief=tk.FLAT, padx=10, pady=5).pack(pady=20, padx=5)
 
 
 
 
 
 # --- UI Functions ---
+# Make sure messagebox is available if show_joke uses it and is not moved.
+# from tkinter import messagebox # Already imported at the top
+
 def show_joke(joke):
     if not joke:
         messagebox.showinfo("Oops!", "No joke found for this category!")
@@ -436,13 +385,34 @@ def update_theme(bg, fg, button):
     root.configure(bg=bg)
     for widget in root.winfo_children():
         try:
-            widget.configure(bg=bg, fg=fg)
-        except:
+            # For ttk widgets, changing bg/fg might be theme-dependent.
+            # tk widgets will respond to this.
+            if isinstance(widget, (ttk.Frame, ttk.Label, ttk.Button, ttk.Combobox, ttk.OptionMenu)):
+                 # For ttk widgets, rely more on the ttk theme and style configurations.
+                 # Overriding 'background' and 'foreground' directly might not always work as expected
+                 # or might make them look inconsistent with the theme.
+                 # However, if 'theme' dict is meant to override, this is where it would happen.
+                 # We might need to create specific ttk styles for themed elements if this is not enough.
+                pass # Let ttk styles handle these mostly.
+            widget.configure(bg=bg) # Apply bg to all for consistency if possible
+            if not isinstance(widget, (ttk.Combobox, ttk.Entry)): # Avoid changing fg for entry type widgets if it makes text unreadable
+                 widget.configure(fg=fg)
+
+        except tk.TclError: # Some widgets might not have bg/fg or specific ones like Combobox list
             pass
+    # Ensure main window background is updated
+    root.configure(bg=bg)
+    # Update specific tk.Labels that use theme colors
+    joke_label.config(bg=bg, fg=fg)
+    cat_label.config(bg=bg, fg=fg)
+    # Update reaction_frame and its tk.Buttons (as they are tk based)
+    reaction_frame.config(bg=bg)
+    # Note: ttk.Buttons in button_action_frame and button_mgmt_frame will NOT be affected by theme['button'] color here.
+    # tk.Button for "Close" will be.
 
 def apply_theme(choice):
     themes = {
-        "Default": ("#f0f0f0", "black", "lightblue"),
+        "Default": ("#f0f0f0", "black", "lightblue"), # bg, fg, button_bg
         "Space": ("#1a1a2e", "white", "#0f3460"),
         "Jungle": ("#dff0d8", "darkgreen", "#4caf50"),
         "Candyland": ("#ffe6f0", "deeppink", "#ff99cc")
