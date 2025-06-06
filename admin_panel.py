@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, colorchooser
 from joke_utils import remove_duplicate_jokes # Import the deduplication utility
 import copy # For deepcopying the list
+from collections import Counter
 
 def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, save_jokes_func):
     """
@@ -48,6 +49,132 @@ def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, sav
     edit_controls_frame.pack(side="right", fill="y", padx=(10,5), pady=5)
 
     cat_entry = ttk.Entry(edit_controls_frame, font=admin_font, width=30) # Use ttk.Entry
+
+        # Joke Text Editor
+    ttk.Label(edit_controls_frame, text="Edit Joke Text:", font=admin_font).pack(pady=(10,0), anchor="w")
+    joke_text_frame = ttk.Frame(edit_controls_frame)
+    joke_text_frame.pack(pady=5, fill="x", expand=False) 
+
+    joke_text_scrollbar = ttk.Scrollbar(joke_text_frame, orient="vertical")
+    joke_text_scrollbar.pack(side="right", fill="y")
+
+    joke_text_widget = tk.Text(joke_text_frame, height=7, width=30, yscrollcommand=joke_text_scrollbar.set, font=admin_font, wrap="word")
+    joke_text_widget.pack(side="left", fill="x", expand=True)
+    joke_text_scrollbar.config(command=joke_text_widget.yview)
+
+    def update_joke_text():
+        idx_tuple = listbox.curselection()
+        if not idx_tuple:
+            messagebox.showinfo("Info", "No joke selected to update.")
+            return
+
+        actual_idx = idx_tuple[0]
+        joke_idx_in_list = current_page.get() * per_page + actual_idx
+
+        if 0 <= joke_idx_in_list < len(jokes_list):
+            new_text = joke_text_widget.get("1.0", "tk.END").strip() # Use "tk.END" as string
+            if not new_text:
+                messagebox.showerror("Error", "Joke text cannot be empty.")
+                return
+
+            jokes_list[joke_idx_in_list]["joke"] = new_text
+            save_jokes_func(jokes_list)
+            load_page() 
+            messagebox.showinfo("Success", "Joke text updated and saved.")
+        else:
+            messagebox.showerror("Error", "Selected joke index is out of range for updating text.")
+
+        ttk.Button(edit_controls_frame, text="Update Joke Text", command=update_joke_text, style="TButton").pack(pady=5)
+
+    # Existing Categories Selector
+    ttk.Label(edit_controls_frame, text="Existing Categories:", font=admin_font).pack(pady=(15,0), anchor="w")
+    
+    existing_cat_frame = ttk.Frame(edit_controls_frame)
+    existing_cat_frame.pack(pady=5, fill="x", expand=False)
+    
+    existing_cat_scrollbar = ttk.Scrollbar(existing_cat_frame, orient="vertical")
+    existing_cat_scrollbar.pack(side="right", fill="y")
+    
+    existing_categories_listbox = tk.Listbox(existing_cat_frame, height=5, yscrollcommand=existing_cat_scrollbar.set, font=admin_font, exportselection=False)
+    existing_categories_listbox.pack(side="left", fill="x", expand=True)
+    existing_cat_scrollbar.config(command=existing_categories_listbox.yview)
+
+    def populate_existing_categories_listbox():
+        existing_categories_listbox.delete(0, tk.END)
+        unique_categories = set()
+        # jokes_list is available in this scope from create_admin_panel arguments
+        for joke in jokes_list: 
+            for category in joke.get("categories", []):
+                unique_categories.add(category)
+        
+        sorted_categories = sorted(list(unique_categories))
+        for cat in sorted_categories:
+            existing_categories_listbox.insert(tk.END, cat)
+
+    def add_selected_category_to_cat_entry():
+        selected_indices = existing_categories_listbox.curselection()
+        if not selected_indices:
+            messagebox.showinfo("Info", "No category selected from the list.")
+            return
+
+        selected_category = existing_categories_listbox.get(selected_indices[0])
+        
+        # cat_entry is available in this scope
+        current_cats_str = cat_entry.get() 
+        current_cats_list = [c.strip() for c in current_cats_str.split(',') if c.strip()]
+        
+        if selected_category not in current_cats_list:
+            current_cats_list.append(selected_category)
+            cat_entry.delete(0, tk.END)
+            cat_entry.insert(0, ", ".join(current_cats_list))
+        else:
+            messagebox.showinfo("Info", f"Category '{selected_category}' is already in the entry.")
+
+    ttk.Button(edit_controls_frame, text="Add Selected Category", command=add_selected_category_to_cat_entry, style="TButton").pack(pady=5)
+
+    def clear_joke_fields():
+        joke_text_widget.delete("1.0", tk.END)
+        cat_entry.delete(0, tk.END)
+        listbox.selection_clear(0, tk.END)
+        # Optionally, set focus to joke_text_widget for new entry
+        joke_text_widget.focus_set()
+
+    ttk.Button(edit_controls_frame, text="Clear for New Joke", command=clear_joke_fields, style="TButton").pack(pady=(10,0))
+
+    def save_new_joke():
+        new_text = joke_text_widget.get("1.0", tk.END).strip()
+        if not new_text:
+            messagebox.showerror("Error", "Joke text cannot be empty for a new joke.")
+            return
+
+        # Determine new ID - find max current ID and add 1
+        new_id = 1
+        if jokes_list: # Check if jokes_list is not empty
+            new_id = max(joke.get("id", 0) for joke in jokes_list) + 1
+        
+        cats_str = cat_entry.get()
+        # Process categories similar to update_categories, ensuring they are capitalized
+        new_categories = sorted(list(set(c.strip().capitalize() for c in cats_str.split(',') if c.strip())))
+
+        new_joke = {
+            "id": new_id,
+            "joke": new_text,
+            "categories": new_categories
+        }
+        
+        jokes_list.append(new_joke)
+        save_jokes_func(jokes_list) # Persist changes
+        
+        # Refresh displays
+        load_page() 
+        populate_existing_categories_listbox() # Refresh existing categories list
+        
+        messagebox.showinfo("Success", f"New joke (ID: {new_id}) saved successfully!")
+        clear_joke_fields() # Clear fields for next new joke or edit
+
+    ttk.Button(edit_controls_frame, text="Save New Joke", command=save_new_joke, style="TButton").pack(pady=5)
+
+    ttk.Label(edit_controls_frame, text="Edit Categories (comma-separated):", font=admin_font).pack(pady=(10,0), anchor="w") 
     cat_entry.pack(pady=5, fill="x")
 
     def load_page():
@@ -55,7 +182,7 @@ def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, sav
         start = current_page.get() * per_page
         for i, joke in enumerate(jokes_list[start:start+per_page]):
             # Ensure 'text' key exists, provide default if not (robustness)
-            listbox.insert(tk.END, joke.get("text", "N/A")[:80])
+            listbox.insert(tk.END, joke.get("joke", "N/A")[:80])
 
 
     def update_categories():
@@ -83,6 +210,8 @@ def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, sav
         if not idx_tuple:
             # If called manually with event=None and nothing is selected, clear cat_entry
             cat_entry.delete(0, tk.END)
+            joke_text_widget.delete("1.0", "tk.END")
+            
             return
         
         actual_idx = idx_tuple[0]
@@ -91,9 +220,14 @@ def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, sav
         if 0 <= joke_idx_in_list < len(jokes_list):
             cat_entry.delete(0, tk.END)
             cat_entry.insert(0, ", ".join(jokes_list[joke_idx_in_list].get("categories", [])))
+            joke_text_widget.delete("1.0", "tk.END")
+            joke_text_widget.insert("1.0", jokes_list[joke_idx_in_list].get("joke", ""))
+
         else:
             # This case should ideally not happen if listbox and jokes_list are in sync
             cat_entry.delete(0, tk.END)
+            joke_text_widget.delete("1.0", "tk.END")
+
             messagebox.showwarning("Warning", "Could not find selected joke data.")
 
 
@@ -105,6 +239,7 @@ def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, sav
     ttk.Button(page_buttons_frame, text="Prev", command=lambda: (current_page.set(max(0, current_page.get() - 1)), load_page()), style="TButton").pack(side="left", padx=5)
     ttk.Button(page_buttons_frame, text="Next", command=lambda: (current_page.set(min(current_page.get() + 1, (len(jokes_list)-1)//per_page )), load_page()), style="TButton").pack(side="left", padx=5)
     
+    populate_existing_categories_listbox() # Populate the new listbox
     load_page() # Initial load
 
     # --- Category Count Tab ---
@@ -130,9 +265,9 @@ def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, sav
             return
 
         sorted_counts = sorted(counts.items(), key=lambda item: item[1], reverse=True)
-        bar_height = 20
-        bar_padding = 5
-        label_area_width = 140 # Increased for potentially longer category names
+        bar_height = 25
+        bar_padding = 8
+        label_area_width = 200 # Increased for potentially longer category names
         text_offset_x = 10
         
         canvas_width = chart_canvas.winfo_width()
@@ -164,10 +299,45 @@ def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, sav
     chart_canvas.bind("<Configure>", draw_category_chart)
     # Redraw when tab becomes visible
     def on_tab_selected(event):
-        selected_tab_index = notebook.index(notebook.select())
-        category_count_tab_index = notebook.tabs().index(count_frame) # Get the actual index of count_frame
-        if selected_tab_index == category_count_tab_index:
-            admin.after(50, draw_category_chart) # Small delay to ensure canvas is ready
+
+        try:
+
+            # Get the widget object of the currently selected tab
+
+            selected_tab_widget_name = notebook.select()
+
+            if not selected_tab_widget_name: # Check if a tab is actually selected
+
+                return
+
+            
+
+            # Assuming 'notebook' is available in the scope where on_tab_selected runs.
+
+            # And 'admin_panel.py' has 'import tkinter as tk'.
+
+            selected_widget = notebook.nametowidget(selected_tab_widget_name)
+
+        
+
+            if selected_widget == count_frame: # Assuming 'count_frame' is available
+
+                # Ensure canvas is ready before drawing, especially if tab was previously hidden
+
+                chart_canvas.update_idletasks() # Assuming 'chart_canvas' is available
+
+                admin.after(50, draw_category_chart) # Assuming 'admin' and 'draw_category_chart' are available
+
+        except tk.TclError as e: # This 'tk' relies on admin_panel.py's import
+
+            # print(f"TclError in on_tab_selected: {e}") 
+
+            pass 
+
+        except Exception as e:
+
+            print(f"Unexpected error in on_tab_selected: {e}", file=sys.stderr)
+
     notebook.bind("<<NotebookTabChanged>>", on_tab_selected)
 
 
@@ -212,7 +382,7 @@ def create_admin_panel(app_root, jokes_list, reactions_data, theme_settings, sav
              # Ensure 'text' key exists for joke, provide default if not
             joke_display_text = joke_text_val[:50] + "..." if len(joke_text_val) > 50 else joke_text_val
             summary_text += f"{joke_display_text}\n"
-            summary_text += f"  😆 Funny: {reacts.get('Funny', 0)} | 🤔 Huh?: {reacts.get('Confused', 0)} | 🙄 So Bad: {reacts.get('Bad', 0)}\n\n"
+            summary_text += f"  😆 Funny: {reacts.get('Funny', 0)} | 😕 Huh?: {reacts.get('Confused', 0)} | 👎 So Bad: {reacts.get('Bad', 0)}\n\n"
     
     reactions_text_widget.insert(tk.END, summary_text)
     reactions_text_widget.config(state="disabled") # Make it read-only
