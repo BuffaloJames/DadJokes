@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 import random, os, re, json
 import pyttsx3
 
+DATA_FILE = os.path.join(os.path.dirname(__file__), 'dad_jokes_dataset_v2.json') # Use the new file
+
+
 # Initialize TTS engine
 engine = pyttsx3.init()
 engine.setProperty('rate', 150)
@@ -12,28 +15,47 @@ def speak(text):
     engine.say(text)
     engine.runAndWait()
 
-# Load jokes from JSON file
-def load_jokes(filename="jokes.json"):
-    jokes = []
-    if not os.path.exists(filename):
-        # Create an empty jokes.json if it doesn't exist
-        with open(filename, "w") as f:
-            json.dump([], f)
-        return jokes
+#######
+def load_jokes():
+    """Loads jokes from the JSON dataset."""
     try:
-        with open(filename, "r") as f:
-            jokes = json.load(f)
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
+            jokes_data = json.load(f) # Now a list of objects
+        # Ensure it's a list of dictionaries with expected keys
+        if not isinstance(jokes_data, list) or \
+           not all(isinstance(item, dict) and "joke" in item and "categories" in item for item in jokes_data):
+            print("Warning: JSON data is not in the expected format (list of {'joke': str, 'categories': list}).")
+            return [] # Or handle error appropriately
+        return jokes_data 
+    except FileNotFoundError:
+        print(f"Error: The data file {DATA_FILE} was not found.")
+        return []
     except json.JSONDecodeError:
-        # Handle cases where the file is empty or malformed
-        # You might want to log this error or create a default empty list
-        with open(filename, "w") as f: # Overwrite/create with empty list
-            json.dump([], f)
-        return [] # Return empty list if decode error
-    return jokes
+        print(f"Error: Could not decode JSON from {DATA_FILE}.")
+        return []
 
-def save_jokes(jokes, filename="jokes.json"):
-    with open(filename, "w") as f:
-        json.dump(jokes, f, indent=2)
+def save_jokes(jokes_data):
+    """Saves jokes to the JSON dataset."""
+    try:
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(jokes_data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving jokes: {e}")
+
+# You'll need to adjust how categories are extracted if you previously just had a list of strings.
+def get_all_categories(jokes_data):
+    """Extracts all unique categories from the jokes data."""
+    all_categories = set()
+    for item in jokes_data:
+        if isinstance(item.get("categories"), list):
+            for category in item["categories"]:
+                all_categories.add(category)
+    return sorted(list(all_categories))
+
+
+
+#######
+
 
 # Load and save reactions
 def load_reactions(filename="joke_reactions.json"):
@@ -171,12 +193,12 @@ current_joke = {} # To store the current joke object
 
 # --- Joke selection functions with weighting ---
 def get_joke_weight(joke):
-    text = joke["text"]
+    text = joke["joke"]
     react = reactions.get(text, {"Funny": 0, "Confused": 0, "Bad": 0})
     return 1 + 3 * react.get("Funny", 0) + react.get("Confused", 0) - 2 * react.get("Bad", 0)
 
 def get_random_joke():
-    remaining = [j for j in jokes if j["text"] not in shown_jokes]
+    remaining = [j for j in jokes if j["joke"] not in shown_jokes]
     if not remaining:
         shown_jokes.clear()
         remaining = jokes
@@ -185,7 +207,7 @@ def get_random_joke():
         return random.choice(jokes) if jokes else None # Fallback if no reactions yet
     population, weights = zip(*weighted)
     joke = random.choices(population, weights=weights)[0]
-    shown_jokes.add(joke["text"])
+    shown_jokes.add(joke["joke"])
     return joke
 
 def get_joke_by_category(cat):
@@ -204,11 +226,7 @@ def get_seasonal_joke():
         return {"text": "No seasonal event right now!", "categories": []}
     return get_joke_by_category(event) or {"text": f"No jokes for {event}", "categories": []}
 
-def get_all_categories():
-    cats = set()
-    for joke in jokes:
-        cats.update(joke["categories"])
-    return sorted(cats)
+
 
 # --- Main App ---
 root = tk.Tk()
@@ -243,7 +261,7 @@ cat_label_var = tk.StringVar()
 category_var = tk.StringVar()
 # Using ttk.Combobox - should pick up style
 category_dropdown = ttk.Combobox(root, textvariable=category_var, font=('Helvetica', 10)) 
-category_dropdown['values'] = get_all_categories()
+category_dropdown['values'] = get_all_categories(jokes)
 category_dropdown.pack(pady=10, padx=5, fill="x")
 
 # Using tk.Entry, font might need to be set if not inherited, or switch to ttk.Entry
@@ -252,7 +270,7 @@ search_entry.pack(pady=5, padx=5, fill="x")
 
 def search_jokes():
     term = search_entry.get().lower()
-    results = [j for j in jokes if term in j["text"].lower() or any(term in c.lower() for c in j["categories"])]
+    results = [j for j in jokes if term in j["joke"].lower() or any(term in c.lower() for c in j["categories"])]
     if results:
         show_joke(random.choice(results))
     else:
@@ -299,7 +317,7 @@ def show_favorites():
     if not favorites:
         messagebox.showinfo("Favorites", "No favorites yet!")
         return
-    fav_text = "\n\n".join(j["text"] for j in favorites)
+    fav_text = "\n\n".join(j["joke"] for j in favorites)
     messagebox.showinfo("Favorite Jokes", fav_text)
 
 # Management buttons frame
@@ -339,7 +357,7 @@ from admin_panel import create_admin_panel
 def on_exit():
     goodbye_joke = get_joke_by_category("goodbye")
     if goodbye_joke:
-        speak(goodbye_joke["text"])
+        speak(goodbye_joke["joke"])
     root.destroy()
 
 # Close button - tk.Button to allow specific theme["fg"] color.
@@ -358,15 +376,15 @@ def show_joke(joke):
     if not joke:
         messagebox.showinfo("Oops!", "No joke found for this category!")
         return
-    joke_text.set(joke["text"])
+    joke_text.set(joke["joke"])
     current_joke["joke"] = joke
     cat_label_var.set("Categories: " + ", ".join(joke.get("categories", [])))
-    speak(joke["text"])
+    speak(joke["joke"])
 
 def react_to_joke(reaction):
     joke = current_joke.get("joke")
     if joke:
-        text = joke["text"]
+        text = joke["joke"]
         if text not in reactions:
             reactions[text] = {"Funny": 0, "Confused": 0, "Bad": 0}
         reactions[text][reaction] += 1
@@ -422,6 +440,6 @@ def apply_theme(choice):
 
 
 
-show_joke({"text": "Welcome to the Dad Joke Generator!", "categories": []})
+show_joke({"joke": "Welcome to the Dad Joke Generator!", "categories": []})
 
 root.mainloop()
